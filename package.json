@@ -1,6 +1,6 @@
 {
-  "name": "@raydium-io/raydium-sdk-v2",
-  "version": "0.1.13-alpha",
+  "name": "opt-raydium-sdk-v2",
+  "version": "0.1.0",
   "description": "An SDK for building applications on top of Raydium.",
   "license": "GPL-3.0",
   "main": "./lib/index.js",
@@ -10,7 +10,7 @@
     "./lib",
     "./src"
   ],
-  "repository": "https://github.com/raydium-io/raydium-sdk-V2",
+  "repository": "https://github.com/sappysealsz/opt-raydium-sdk-v2",
   "publicConfig": {
     "registry": "https://registry.yarnpkg.com",
     "access": "public"
