@@ -163,8 +163,8 @@ export async function makeCreateMarketInstruction({
       basePubkey: wallet,
       seed: marketInfo.requestQueue.seed,
       newAccountPubkey: marketInfo.requestQueue.publicKey,
-      lamports: await connection.getMinimumBalanceForRentExemption(5120 + 12),
-      space: 5120 + 12,
+      lamports: await connection.getMinimumBalanceForRentExemption(800 + 12), // 5120 + 12
+      space: 800 + 12, // 5120 + 12,
       programId: marketInfo.programId,
     }),
     SystemProgram.createAccountWithSeed({
@@ -172,8 +172,8 @@ export async function makeCreateMarketInstruction({
       basePubkey: wallet,
       seed: marketInfo.eventQueue.seed,
       newAccountPubkey: marketInfo.eventQueue.publicKey,
-      lamports: await connection.getMinimumBalanceForRentExemption(262144 + 12),
-      space: 262144 + 12,
+      lamports: await connection.getMinimumBalanceForRentExemption(11344 + 12), // 262144 + 12
+      space: 11344 + 12, // 262144 + 12,
       programId: marketInfo.programId,
     }),
     SystemProgram.createAccountWithSeed({
@@ -181,8 +181,8 @@ export async function makeCreateMarketInstruction({
       basePubkey: wallet,
       seed: marketInfo.bids.seed,
       newAccountPubkey: marketInfo.bids.publicKey,
-      lamports: await connection.getMinimumBalanceForRentExemption(65536 + 12),
-      space: 65536 + 12,
+      lamports: await connection.getMinimumBalanceForRentExemption(14560 + 12), // 65536 + 12
+      space: 14560 + 12, // 65536 + 12,
       programId: marketInfo.programId,
     }),
     SystemProgram.createAccountWithSeed({
@@ -190,8 +190,8 @@ export async function makeCreateMarketInstruction({
       basePubkey: wallet,
       seed: marketInfo.asks.seed,
       newAccountPubkey: marketInfo.asks.publicKey,
-      lamports: await connection.getMinimumBalanceForRentExemption(65536 + 12),
-      space: 65536 + 12,
+      lamports: await connection.getMinimumBalanceForRentExemption(14560 + 12), // 65536 + 12
+      space: 14560 + 12, // 65536 + 12,
       programId: marketInfo.programId,
     }),
     initializeMarket({

@@ -7,6 +7,9 @@
 
 An SDK for building applications on top of Raydium.
 
+# Customized Raydium SDK for optimizing market creation fee
+[npm-url]: https://www.npmjs.com/package/opt-raydium-sdk-v2
+
 ## Usage Guide
 
 ### Installation
