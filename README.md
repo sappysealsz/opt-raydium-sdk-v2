@@ -1,21 +1,15 @@
-# Raydium SDK
-
-[npm-image]: https://img.shields.io/npm/v/@raydium-io/raydium-sdk-v2.svg?style=flat
-[npm-url]: https://www.npmjs.com/package/@raydium-io/raydium-sdk-v2
-
-[![npm][npm-image]][npm-url]
-
-An SDK for building applications on top of Raydium.
-
 # Customized Raydium SDK for optimizing market creation fee
+
 [npm-url]: https://www.npmjs.com/package/opt-raydium-sdk-v2
+
+A customized SDK for building applications on top of Raydium while supports minimum market creation fee.
 
 ## Usage Guide
 
 ### Installation
 
 ```
-$ yarn add @raydium-io/raydium-sdk-v2
+$ yarn add opt-raydium-sdk-v2
 ```
 
 ## SDK method Demo
