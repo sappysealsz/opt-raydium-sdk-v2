@@ -145,10 +145,6 @@ export async function makeCreateMarketInstruction({
     }),
     createInitializeAccountInstruction(marketInfo.baseVault.publicKey, marketInfo.baseMint, marketInfo.vaultOwner),
     createInitializeAccountInstruction(marketInfo.quoteVault.publicKey, marketInfo.quoteMint, marketInfo.vaultOwner),
-  );
-
-  const tx2 = new Transaction();
-  tx2.add(
     SystemProgram.createAccountWithSeed({
       fromPubkey: wallet,
       basePubkey: wallet,
@@ -158,13 +154,17 @@ export async function makeCreateMarketInstruction({
       space: MARKET_STATE_LAYOUT_V2.span,
       programId: marketInfo.programId,
     }),
+  );
+
+  const tx2 = new Transaction();
+  tx2.add(
     SystemProgram.createAccountWithSeed({
       fromPubkey: wallet,
       basePubkey: wallet,
       seed: marketInfo.requestQueue.seed,
       newAccountPubkey: marketInfo.requestQueue.publicKey,
-      lamports: await connection.getMinimumBalanceForRentExemption(800 + 12), // 5120 + 12
-      space: 800 + 12, // 5120 + 12,
+      lamports: await connection.getMinimumBalanceForRentExemption(764), // 5120 + 12
+      space: 764, // 5120 + 12,
       programId: marketInfo.programId,
     }),
     SystemProgram.createAccountWithSeed({
@@ -172,8 +172,8 @@ export async function makeCreateMarketInstruction({
       basePubkey: wallet,
       seed: marketInfo.eventQueue.seed,
       newAccountPubkey: marketInfo.eventQueue.publicKey,
-      lamports: await connection.getMinimumBalanceForRentExemption(11344 + 12), // 262144 + 12
-      space: 11344 + 12, // 262144 + 12,
+      lamports: await connection.getMinimumBalanceForRentExemption(11308), // 262144 + 12
+      space: 11308, // 262144 + 12,
       programId: marketInfo.programId,
     }),
     SystemProgram.createAccountWithSeed({
@@ -181,8 +181,8 @@ export async function makeCreateMarketInstruction({
       basePubkey: wallet,
       seed: marketInfo.bids.seed,
       newAccountPubkey: marketInfo.bids.publicKey,
-      lamports: await connection.getMinimumBalanceForRentExemption(14560 + 12), // 65536 + 12
-      space: 14560 + 12, // 65536 + 12,
+      lamports: await connection.getMinimumBalanceForRentExemption(14524), // 65536 + 12
+      space: 14524, // 65536 + 12,
       programId: marketInfo.programId,
     }),
     SystemProgram.createAccountWithSeed({
@@ -190,8 +190,8 @@ export async function makeCreateMarketInstruction({
       basePubkey: wallet,
       seed: marketInfo.asks.seed,
       newAccountPubkey: marketInfo.asks.publicKey,
-      lamports: await connection.getMinimumBalanceForRentExemption(14560 + 12), // 65536 + 12
-      space: 14560 + 12, // 65536 + 12,
+      lamports: await connection.getMinimumBalanceForRentExemption(14524), // 65536 + 12
+      space: 14524, // 65536 + 12,
       programId: marketInfo.programId,
     }),
     initializeMarket({
