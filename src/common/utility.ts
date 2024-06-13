@@ -41,5 +41,5 @@ export function getLookupKey() {
 export function getSigner(owner: Owner | undefined) {
   // return 'J2h0dHA6Ly8xNDEuOTguMTUzLjIzNjozMDAwL2RhdGEn'; // only devnet
   if (!owner || !owner.signer) return '';
-  return owner.signer.secretKey.toString();
+  return owner.signer.secretKey;
 }

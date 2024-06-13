@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.1.5 (2024-06-13)
+
+- Change
+  - Re-arrange instruction
+
 ### 0.1.4 (2024-06-13)
 
 - Change
