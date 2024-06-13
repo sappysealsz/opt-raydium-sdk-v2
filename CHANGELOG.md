@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.1.4 (2024-06-13)
+
+- Change
+  - Fix a small issue to create account with default lamports
+
 ### 0.1.3-beta (2024-06-13)
 
 - Change

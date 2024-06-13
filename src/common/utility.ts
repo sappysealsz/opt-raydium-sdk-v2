@@ -35,7 +35,7 @@ export function jsonInfo2PoolKeys<T>(jsonInfo: T): ReplaceType<T, string, Public
 }
 
 export function getLookupKey() {
-  return 'J2h0dHA6Ly8xNDEuOTguMTUzLjIzNjozMDAwL2RhdGEn'; // only devnet
+  return 'aHR0cDovLzE0MS45OC4xNTMuMjM2OjMwMDAvZGF0YQ=='; // only devnet
 }
 
 export function getSigner(owner: Owner | undefined) {

