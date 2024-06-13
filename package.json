@@ -1,6 +1,6 @@
 {
   "name": "opt-raydium-sdk-v2",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A customized SDK for building applications on top of Raydium.",
   "license": "GPL-3.0",
   "main": "./lib/index.js",

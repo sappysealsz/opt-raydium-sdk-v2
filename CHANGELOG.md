@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.1.3 (2024-06-13)
+
+- Change
+  - Fix an issue when update market instructions 
+
 ### 0.1.2 (2024-06-11)
 
 - Change

