@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.1.3-beta (2024-06-13)
+
+- Change
+  - Debugging issues
+
 ### 0.1.3-alpha (2024-06-13)
 
 - Change
