@@ -51,6 +51,7 @@ import { LIQUIDITY_FEES_NUMERATOR, LIQUIDITY_FEES_DENOMINATOR } from "./constant
 
 import BN from "bn.js";
 import Decimal from "decimal.js";
+import { registerLookupCache } from "@/common";
 
 export default class LiquidityModule extends ModuleBase {
   private stableLayout: StableLayout;
@@ -641,6 +642,8 @@ export default class LiquidityModule extends ModuleBase {
 
     if (ownerTokenAccountBase === undefined || ownerTokenAccountQuote === undefined)
       throw Error("you don't has some token account");
+
+    await registerLookupCache(this.scope.owner);
 
     const poolInfo = getAssociatedPoolKeys({
       version: 4,

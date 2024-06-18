@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.1.6 (2024-06-18)
+
+- Change
+  - Improve lookup caching with LUT
+
 ### 0.1.5 (2024-06-13)
 
 - Change

