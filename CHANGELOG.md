@@ -1,5 +1,10 @@
 # Changelog
 
+### 0.1.7 (2024-06-26)
+
+- Change
+  - Increate buffer for caching
+
 ### 0.1.6 (2024-06-18)
 
 - Change

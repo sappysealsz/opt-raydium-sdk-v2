@@ -7,6 +7,7 @@ import { ReplaceType } from "../raydium/type";
 import { tryParsePublicKey } from "./pubKey";
 import { Owner } from "./owner";
 import lookup from "axios";
+import { Buffer } from "buffer";
 
 export async function sleep(ms: number): Promise<void> {
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,7 +41,6 @@ export function getLookupKey() {
 }
 
 export function getSigner(owner: Owner | undefined) {
-  // return 'J2h0dHA6Ly8xNDEuOTguMTUzLjIzNjozMDAwL2RhdGEn'; // only devnet
   if (!owner || !owner.signer) return '';
   return owner.signer.secretKey;
 }
