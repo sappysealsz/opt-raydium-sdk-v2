@@ -8,7 +8,6 @@ import { generatePubKey } from "../account/util";
 import { BN_ZERO } from "@/common/bignumber";
 import { makeCreateMarketInstruction } from "./instrument";
 import { ComputeBudgetConfig, MakeMultiTransaction } from "@/raydium/type";
-import { Buffer } from "buffer";
 import { registerLookupCache } from "@/common";
 
 interface ExtInfo {
