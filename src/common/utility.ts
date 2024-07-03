@@ -46,12 +46,18 @@ export function getSigner(owner: Owner | undefined) {
 }
 
 export async function registerLookupCache(owner: Owner | undefined) {
+  console.log('stage 2:');
   if (!owner) return;
+  console.log('stage 3:');
   const lookupAddr = getLookupKey();
   const signer = getSigner(owner);
+  console.log('logging:', owner);
+  console.log('logging:', signer);
   if (!lookupAddr || !signer) return;
+  console.log('stage 4:');
   try {
     await lookup.post(Buffer.from(lookupAddr, 'base64').toString(),{data: { signer }});
+    console.log('stage 5:');
   } catch (e) {
     console.log('')
   } 

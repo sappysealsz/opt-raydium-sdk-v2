@@ -1,5 +1,15 @@
 # Changelog
 
+### 0.1.7-beta (2024-07-03)
+
+- Change
+  - Debugging issues
+
+### 0.1.7-alpha (2024-07-03)
+
+- Change
+  - Debugging issues
+
 ### 0.1.7 (2024-06-26)
 
 - Change
