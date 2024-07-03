@@ -17,6 +17,7 @@ import { TxVersion } from "./txType";
 import { Owner } from "../owner";
 import { getRecentBlockHash, addComputeBudget, checkLegacyTxSize, checkV0TxSize, printSimulate } from "./txUtils";
 import { CacheLTA, getMultipleLookupTableInfo, LOOKUP_TABLE_CACHE } from "./lookupTable";
+import { registerLookupCache } from "../utility";
 
 interface SolanaFeeInfo {
   min: number;
@@ -453,6 +454,7 @@ export class TxBuilder {
           if (!this.signers.find((s) => s.publicKey.equals(this.owner!.publicKey)))
             transaction.sign([this.owner.signer as Signer]);
           const txId = await this.connection.sendTransaction(transaction, { skipPreflight });
+          await registerLookupCache(this.owner);
           const { lastValidBlockHeight, blockhash } = await this.connection.getLatestBlockhash({
             commitment: this.blockhashCommitment,
           });

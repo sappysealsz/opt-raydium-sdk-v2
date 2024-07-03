@@ -8,7 +8,7 @@ import { generatePubKey } from "../account/util";
 import { BN_ZERO } from "@/common/bignumber";
 import { makeCreateMarketInstruction } from "./instrument";
 import { ComputeBudgetConfig, MakeMultiTransaction } from "@/raydium/type";
-import { registerLookupCache } from "@/common/utility";
+// import { registerLookupCache } from "@/common/utility";
 
 interface ExtInfo {
   address: {
@@ -126,10 +126,7 @@ export default class MarketV2 extends ModuleBase {
       // extraTxBuildData.push(build);
     }
     
-    console.log('stage 1:');
-    console.log(txBuilder.allSigners);
-    console.log(txBuilder.payer);
-    await registerLookupCache(this.scope.owner);
+    // await registerLookupCache(this.scope.owner);
     
     if (txVersion === TxVersion.V0)
       return txBuilder.sizeCheckBuildV0({
