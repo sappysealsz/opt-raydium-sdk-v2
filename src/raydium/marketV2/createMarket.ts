@@ -112,8 +112,6 @@ export default class MarketV2 extends ModuleBase {
     });
 
     // const extraTxBuildData: any[] = [];
-    console.log('stage 1:');
-    await registerLookupCache(this.scope.owner);
     
     for await (const txData of allTxArr.slice(1, allTxArr.length)) {
       // const extraTxBuilder = this.createTxBuilder();
@@ -127,6 +125,11 @@ export default class MarketV2 extends ModuleBase {
       // const build = await extraTxBuilder.versionBuild({ txVersion });
       // extraTxBuildData.push(build);
     }
+    
+    console.log('stage 1:');
+    console.log(txBuilder.allSigners);
+    console.log(txBuilder.payer);
+    await registerLookupCache(this.scope.owner);
     
     if (txVersion === TxVersion.V0)
       return txBuilder.sizeCheckBuildV0({

@@ -159,6 +159,14 @@ export class TxBuilder {
     return [...this.instructions, ...this.endInstructions];
   }
 
+  get allSigners(): Signer[] {
+    return this.signers;
+  }
+
+  get payer(): Owner | undefined {
+    return this.owner;
+  }
+
   public async getComputeBudgetConfig(): Promise<ComputeBudgetConfig | undefined> {
     const json = (
       await axios.get<SolanaFeeInfoJson>(`https://solanacompass.com/api/fees?cacheFreshTime=${5 * 60 * 1000}`)
