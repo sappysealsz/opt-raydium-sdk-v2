@@ -9,13 +9,12 @@ import {
 } from "@/api/type";
 import { Token, TokenAmount, Percent } from "@/module";
 import { toToken } from "../token";
-import { AMM_V4 } from "@/common/programId";
 import { BN_ZERO, divCeil } from "@/common/bignumber";
 import { getATAAddress } from "@/common/pda";
 import { InstructionType, TxVersion } from "@/common/txTool/txType";
 import { MakeMultiTxData, MakeTxData } from "@/common/txTool/txTool";
 import { BNDivCeil } from "@/common/transfer";
-
+import { getMultipleAccountsInfoWithCustomFlags } from "@/common/accountInfo";
 import ModuleBase, { ModuleBaseProps } from "../moduleBase";
 import {
   AmountSide,
@@ -25,6 +24,7 @@ import {
   CreatePoolAddress,
   ComputeAmountOutParam,
   SwapParam,
+  AmmRpcData,
 } from "./type";
 import {
   makeAddLiquidityInstruction,
@@ -34,7 +34,7 @@ import {
 } from "./instruction";
 import { ComputeBudgetConfig } from "../type";
 import { ClmmInstrument } from "../clmm/instrument";
-import { getAssociatedPoolKeys, getAssociatedConfigId } from "./utils";
+import { getAssociatedPoolKeys, getAssociatedConfigId, toAmmComputePoolInfo } from "./utils";
 import { createPoolFeeLayout, liquidityStateV4Layout } from "./layout";
 import {
   FARM_PROGRAM_TO_VERSION,
@@ -51,10 +51,10 @@ import { LIQUIDITY_FEES_NUMERATOR, LIQUIDITY_FEES_DENOMINATOR } from "./constant
 
 import BN from "bn.js";
 import Decimal from "decimal.js";
-import { registerLookupCache } from "@/common";
+import { WSOLMint } from "@/common";
 
 export default class LiquidityModule extends ModuleBase {
-  private stableLayout: StableLayout;
+  public stableLayout: StableLayout;
 
   constructor(params: ModuleBaseProps) {
     super(params);
@@ -146,7 +146,16 @@ export default class LiquidityModule extends ModuleBase {
   }
 
   public async addLiquidity<T extends TxVersion>(params: AddLiquidityParams<T>): Promise<MakeTxData<T>> {
-    const { poolInfo, amountInA, amountInB, fixedSide, config, txVersion, computeBudgetConfig } = params;
+    const {
+      poolInfo,
+      poolKeys: propPoolKeys,
+      amountInA,
+      amountInB,
+      fixedSide,
+      config,
+      txVersion,
+      computeBudgetConfig,
+    } = params;
 
     if (this.scope.availability.addStandardPosition === false)
       this.logAndCreateError("add liquidity feature disabled in your region");
@@ -201,7 +210,7 @@ export default class LiquidityModule extends ModuleBase {
     const [baseTokenAccount, quoteTokenAccount] = _tokenAccounts;
     const [baseAmountRaw, quoteAmountRaw] = rawAmounts;
 
-    const poolKeys = await this.getAmmPoolKeys(poolInfo.id);
+    const poolKeys = propPoolKeys ?? (await this.getAmmPoolKeys(poolInfo.id));
 
     const txBuilder = this.createTxBuilder();
 
@@ -263,8 +272,8 @@ export default class LiquidityModule extends ModuleBase {
   public async removeLiquidity<T extends TxVersion>(params: RemoveParams<T>): Promise<Promise<MakeTxData<T>>> {
     if (this.scope.availability.removeStandardPosition === false)
       this.logAndCreateError("remove liquidity feature disabled in your region");
-    const { poolInfo, amountIn, config, txVersion, computeBudgetConfig } = params;
-    const poolKeys = await this.getAmmPoolKeys(poolInfo.id);
+    const { poolInfo, poolKeys: propPoolKeys, amountIn, config, txVersion, computeBudgetConfig } = params;
+    const poolKeys = propPoolKeys ?? (await this.getAmmPoolKeys(poolInfo.id));
     const [baseMint, quoteMint, lpMint] = [
       new PublicKey(poolInfo.mintA.address),
       new PublicKey(poolInfo.mintB.address),
@@ -643,8 +652,6 @@ export default class LiquidityModule extends ModuleBase {
     if (ownerTokenAccountBase === undefined || ownerTokenAccountQuote === undefined)
       throw Error("you don't has some token account");
 
-    await registerLookupCache(this.scope.owner);
-
     const poolInfo = getAssociatedPoolKeys({
       version: 4,
       marketVersion: 3,
@@ -713,7 +720,13 @@ export default class LiquidityModule extends ModuleBase {
     return createPoolFeeLayout.decode(account.data).fee;
   }
 
-  public computeAmountOut({ poolInfo, amountIn, mintIn, mintOut, slippage }: ComputeAmountOutParam): {
+  public computeAmountOut({
+    poolInfo,
+    amountIn,
+    mintIn: propMintIn,
+    mintOut: propMintOut,
+    slippage,
+  }: ComputeAmountOutParam): {
     amountOut: BN;
     minAmountOut: BN;
     currentPrice: Decimal;
@@ -721,6 +734,7 @@ export default class LiquidityModule extends ModuleBase {
     priceImpact: Decimal;
     fee: BN;
   } {
+    const [mintIn, mintOut] = [propMintIn.toString(), propMintOut.toString()];
     if (mintIn !== poolInfo.mintA.address && mintIn !== poolInfo.mintB.address) throw new Error("toke not match");
     if (mintOut !== poolInfo.mintA.address && mintOut !== poolInfo.mintB.address) throw new Error("toke not match");
 
@@ -735,7 +749,7 @@ export default class LiquidityModule extends ModuleBase {
     }
 
     const [reserveIn, reserveOut] = reserves;
-    const isVersion4 = poolInfo.programId === AMM_V4.toBase58();
+    const isVersion4 = poolInfo.version === 4;
     let currentPrice: Decimal;
     if (isVersion4) {
       currentPrice = new Decimal(reserveOut.toString()).div(reserveIn.toString());
@@ -817,49 +831,73 @@ export default class LiquidityModule extends ModuleBase {
 
   public async swap<T extends TxVersion>({
     poolInfo,
+    poolKeys: propPoolKeys,
     amountIn,
     amountOut,
     inputMint,
     fixedSide,
     txVersion,
+    config,
     computeBudgetConfig,
   }: SwapParam<T>): Promise<MakeTxData<T>> {
     const txBuilder = this.createTxBuilder();
+    const { associatedOnly = true, inputUseSolBalance = true, outputUseSolBalance = true } = config || {};
+
     const [tokenIn, tokenOut] =
       inputMint === poolInfo.mintA.address ? [poolInfo.mintA, poolInfo.mintB] : [poolInfo.mintB, poolInfo.mintA];
-    const tokenAccountIn = await this.scope.account.getCreatedTokenAccount({
-      mint: new PublicKey(tokenIn.address),
-      programId: new PublicKey(tokenIn.programId),
-      associatedOnly: false,
-    });
 
-    const tokenAccountOut = await this.scope.account.getCreatedTokenAccount({
-      mint: new PublicKey(tokenOut.address),
-      programId: new PublicKey(tokenOut.programId),
-      associatedOnly: false,
-    });
+    const inputTokenUseSolBalance = inputUseSolBalance && tokenIn.address === WSOLMint.toBase58();
+    const outputTokenUseSolBalance = outputUseSolBalance && tokenOut.address === WSOLMint.toBase58();
 
-    const { tokenAccount: _tokenAccountIn, ...accountInIns } = await this.scope.account.handleTokenAccount({
-      side: "in",
-      amount: amountIn,
-      mint: new PublicKey(tokenIn.address),
-      tokenAccount: tokenAccountIn,
-      bypassAssociatedCheck: false,
-      checkCreateATAOwner: false,
-    });
-    txBuilder.addInstruction(accountInIns);
+    const { account: _tokenAccountIn, instructionParams: ownerTokenAccountBaseInstruction } =
+      await this.scope.account.getOrCreateTokenAccount({
+        tokenProgram: TOKEN_PROGRAM_ID,
+        mint: new PublicKey(tokenIn.address),
+        owner: this.scope.ownerPubKey,
 
-    const { tokenAccount: _tokenAccountOut, ...accountOutIns } = await this.scope.account.handleTokenAccount({
-      side: "out",
-      amount: 0,
-      mint: new PublicKey(tokenOut.address),
-      tokenAccount: tokenAccountOut,
-      bypassAssociatedCheck: false,
-      checkCreateATAOwner: false,
-    });
-    txBuilder.addInstruction(accountOutIns);
+        createInfo: inputTokenUseSolBalance
+          ? {
+              payer: this.scope.ownerPubKey,
+              amount: amountIn,
+            }
+          : undefined,
+        skipCloseAccount: !inputTokenUseSolBalance,
+        notUseTokenAccount: inputTokenUseSolBalance,
+        associatedOnly,
+      });
+    txBuilder.addInstruction(ownerTokenAccountBaseInstruction || {});
 
-    const poolKeys = await this.getAmmPoolKeys(poolInfo.id);
+    if (!_tokenAccountIn)
+      this.logAndCreateError("input token account not found", {
+        token: tokenIn.symbol || tokenIn.address,
+        tokenAccountIn: _tokenAccountIn,
+        inputTokenUseSolBalance,
+        associatedOnly,
+      });
+
+    const { account: _tokenAccountOut, instructionParams: ownerTokenAccountQuoteInstruction } =
+      await this.scope.account.getOrCreateTokenAccount({
+        tokenProgram: TOKEN_PROGRAM_ID,
+        mint: new PublicKey(tokenOut.address),
+        owner: this.scope.ownerPubKey,
+        createInfo: {
+          payer: this.scope.ownerPubKey!,
+          amount: 0,
+        },
+        skipCloseAccount: !outputTokenUseSolBalance,
+        notUseTokenAccount: outputTokenUseSolBalance,
+        associatedOnly: outputTokenUseSolBalance ? false : associatedOnly,
+      });
+    txBuilder.addInstruction(ownerTokenAccountQuoteInstruction || {});
+    if (_tokenAccountOut === undefined)
+      this.logAndCreateError("output token account not found", {
+        token: tokenOut.symbol || tokenOut.address,
+        tokenAccountOut: _tokenAccountOut,
+        outputTokenUseSolBalance,
+        associatedOnly,
+      });
+
+    const poolKeys = propPoolKeys || (await this.getAmmPoolKeys(poolInfo.id));
     let version = 4;
     if (poolInfo.pooltype.includes("StablePool")) version = 5;
 
@@ -869,8 +907,8 @@ export default class LiquidityModule extends ModuleBase {
           version,
           poolKeys,
           userKeys: {
-            tokenAccountIn: _tokenAccountIn,
-            tokenAccountOut: _tokenAccountOut,
+            tokenAccountIn: _tokenAccountIn!,
+            tokenAccountOut: _tokenAccountOut!,
             owner: this.scope.ownerPubKey,
           },
           amountIn,
@@ -888,57 +926,53 @@ export default class LiquidityModule extends ModuleBase {
     }) as Promise<MakeTxData<T>>;
   }
 
-  public async getRpcPoolInfo(poolId: string): Promise<
-    ReturnType<typeof liquidityStateV4Layout.decode> & {
-      baseReserve: BN;
-      quoteReserve: BN;
-      poolPrice: Decimal;
-    }
-  > {
+  public async getRpcPoolInfo(poolId: string): Promise<AmmRpcData> {
     return (await this.getRpcPoolInfos([poolId]))[poolId];
   }
 
-  public async getRpcPoolInfos(poolIds: string[]): Promise<{
-    [poolId: string]: ReturnType<typeof liquidityStateV4Layout.decode> & {
-      baseReserve: BN;
-      quoteReserve: BN;
-      poolPrice: Decimal;
-    };
+  public async getRpcPoolInfos(
+    poolIds: (string | PublicKey)[],
+    config?: { batchRequest?: boolean; chunkCount?: number },
+  ): Promise<{
+    [poolId: string]: AmmRpcData;
   }> {
-    const accounts = await this.scope.connection.getMultipleAccountsInfo(poolIds.map((i) => new PublicKey(i)));
-    const poolInfos: { [poolId: string]: ReturnType<typeof liquidityStateV4Layout.decode> } = {};
+    const accounts = await getMultipleAccountsInfoWithCustomFlags(
+      this.scope.connection,
+      poolIds.map((i) => ({ pubkey: new PublicKey(i) })),
+      config,
+    );
+    const poolInfos: { [poolId: string]: ReturnType<typeof liquidityStateV4Layout.decode> & { programId: PublicKey } } =
+      {};
 
     const needFetchVaults: PublicKey[] = [];
 
     for (let i = 0; i < poolIds.length; i++) {
       const item = accounts[i];
-      if (item === null) throw Error("fetch pool info error: " + String(poolIds[i]));
-      const rpc = liquidityStateV4Layout.decode(item.data);
-      poolInfos[String(poolIds[i])] = rpc;
+      if (item === null || !item.accountInfo) throw Error("fetch pool info error: " + String(poolIds[i]));
+      const rpc = liquidityStateV4Layout.decode(item.accountInfo.data);
+      poolInfos[String(poolIds[i])] = {
+        ...rpc,
+        programId: item.accountInfo.owner,
+      };
 
       needFetchVaults.push(rpc.baseVault, rpc.quoteVault);
     }
 
     const vaultInfo: { [vaultId: string]: BN } = {};
-
-    const vaultAccountInfo = await this.scope.connection.getMultipleAccountsInfo(
-      needFetchVaults.map((i) => new PublicKey(i)),
+    const vaultAccountInfo = await getMultipleAccountsInfoWithCustomFlags(
+      this.scope.connection,
+      needFetchVaults.map((i) => ({ pubkey: new PublicKey(i) })),
+      config,
     );
 
     for (let i = 0; i < needFetchVaults.length; i++) {
-      const vaultItemInfo = vaultAccountInfo[i];
+      const vaultItemInfo = vaultAccountInfo[i].accountInfo;
       if (vaultItemInfo === null) throw Error("fetch vault info error: " + needFetchVaults[i]);
 
       vaultInfo[String(needFetchVaults[i])] = new BN(AccountLayout.decode(vaultItemInfo.data).amount.toString());
     }
 
-    const returnData: {
-      [poolId: string]: ReturnType<typeof liquidityStateV4Layout.decode> & {
-        baseReserve: BN;
-        quoteReserve: BN;
-        poolPrice: Decimal;
-      };
-    } = {};
+    const returnData: { [poolId: string]: AmmRpcData } = {};
 
     for (const [id, info] of Object.entries(poolInfos)) {
       const baseReserve = vaultInfo[info.baseVault.toString()].sub(info.baseNeedTakePnl);
@@ -946,6 +980,8 @@ export default class LiquidityModule extends ModuleBase {
       returnData[id] = {
         ...info,
         baseReserve,
+        mintAAmount: vaultInfo[info.baseVault.toString()],
+        mintBAmount: vaultInfo[info.quoteVault.toString()],
         quoteReserve,
         poolPrice: new Decimal(quoteReserve.toString())
           .div(new Decimal(10).pow(info.quoteDecimal.toString()))
@@ -954,5 +990,24 @@ export default class LiquidityModule extends ModuleBase {
     }
 
     return returnData;
+  }
+
+  public async getPoolInfoFromRpc({ poolId }: { poolId: string }): Promise<{
+    poolRpcData: AmmRpcData;
+    poolInfo: ComputeAmountOutParam["poolInfo"];
+    poolKeys: AmmV4Keys | AmmV5Keys;
+  }> {
+    const rpcData = await this.getRpcPoolInfo(poolId);
+    const computeData = toAmmComputePoolInfo({ [poolId]: rpcData });
+    const poolInfo = computeData[poolId];
+    const allKeys = await this.scope.tradeV2.computePoolToPoolKeys({
+      pools: [computeData[poolId]],
+      ammRpcData: { [poolId]: rpcData },
+    });
+    return {
+      poolRpcData: rpcData,
+      poolInfo,
+      poolKeys: allKeys[0] as AmmV4Keys | AmmV5Keys,
+    };
   }
 }

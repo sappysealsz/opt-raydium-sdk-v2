@@ -1,8 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import { MintLayout, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
-import { Price, Token } from "@/module";
-import { validateAndParsePublicKey, SOLMint } from "@/common/pubKey";
 import { ApiV3Token, JupTokenType } from "@/api/type";
 import ModuleBase, { ModuleBaseProps } from "../moduleBase";
 import { LoadParams } from "../type";
@@ -30,7 +28,7 @@ export default class TokenModule extends ModuleBase {
     this.checkDisabled();
     const { forceUpdate = false, type = JupTokenType.Strict } = params || {};
     const { mintList, blacklist, whiteList } = await this.scope.fetchV3TokenList(forceUpdate);
-    const jup = await this.scope.fetchJupTokenList(type, forceUpdate);
+    const jup = await this.scope.fetchJupTokenList(forceUpdate);
     // reset all data
     this._tokenList = [];
     this._tokenMap = new Map();

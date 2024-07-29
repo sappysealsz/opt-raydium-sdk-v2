@@ -1,12 +1,13 @@
 import { PublicKey } from "@solana/web3.js";
 import { NATIVE_MINT, TOKEN_PROGRAM_ID, AccountLayout } from "@solana/spl-token";
-import { CpmmKeys } from "@/api/type";
+import { ApiV3PoolInfoConcentratedItem, ApiV3PoolInfoStandardItemCpmm, CpmmKeys } from "@/api/type";
 import { Percent } from "@/module";
 import { BN_ZERO } from "@/common/bignumber";
 import { getATAAddress } from "@/common/pda";
 import { WSOLMint } from "@/common/pubKey";
 import { InstructionType, TxVersion } from "@/common/txTool/txType";
 import { MakeTxData } from "@/common/txTool/txTool";
+import { CurveCalculator } from "./curve/calculator";
 
 import ModuleBase, { ModuleBaseProps } from "../moduleBase";
 import {
@@ -16,7 +17,8 @@ import {
   WithdrawCpmmLiquidityParams,
   CpmmSwapParams,
   ComputePairAmountParams,
-  CpmmConfigInfoInterface,
+  CpmmRpcData,
+  CpmmComputeData,
 } from "./type";
 import { getCreatePoolKeys, getPdaObservationId } from "./pda";
 import {
@@ -29,8 +31,10 @@ import {
 import BN from "bn.js";
 import { CpmmPoolInfoLayout, CpmmConfigInfoLayout } from "./layout";
 import Decimal from "decimal.js";
-import { getTransferAmountFeeV2 } from "@/common";
-import { GetTransferAmountFee } from "@/raydium/type";
+import { fetchMultipleMintInfos, getMultipleAccountsInfoWithCustomFlags, getTransferAmountFeeV2 } from "@/common";
+import { GetTransferAmountFee, ReturnTypeFetchMultipleMintInfos } from "@/raydium/type";
+import { toApiV3Token, toFeeConfig } from "../token";
+import { getPdaPoolAuthority } from "./pda";
 
 export default class CpmmModule extends ModuleBase {
   constructor(params: ModuleBaseProps) {
@@ -45,17 +49,7 @@ export default class CpmmModule extends ModuleBase {
     return ((await this.scope.api.fetchPoolKeysById({ idList: [poolId] })) as CpmmKeys[])[0];
   }
 
-  public async getRpcPoolInfo(
-    poolId: string,
-    fetchConfigInfo?: boolean,
-  ): Promise<
-    ReturnType<typeof CpmmPoolInfoLayout.decode> & {
-      baseReserve: BN;
-      quoteReserve: BN;
-      configInfo?: CpmmConfigInfoInterface;
-      poolPrice: Decimal;
-    }
-  > {
+  public async getRpcPoolInfo(poolId: string, fetchConfigInfo?: boolean): Promise<CpmmRpcData> {
     return (await this.getRpcPoolInfos([poolId], fetchConfigInfo))[poolId];
   }
 
@@ -63,24 +57,25 @@ export default class CpmmModule extends ModuleBase {
     poolIds: string[],
     fetchConfigInfo?: boolean,
   ): Promise<{
-    [poolId: string]: ReturnType<typeof CpmmPoolInfoLayout.decode> & {
-      baseReserve: BN;
-      quoteReserve: BN;
-      configInfo?: CpmmConfigInfoInterface;
-      poolPrice: Decimal;
-    };
+    [poolId: string]: CpmmRpcData;
   }> {
-    const accounts = await this.scope.connection.getMultipleAccountsInfo(poolIds.map((i) => new PublicKey(i)));
-    const poolInfos: { [poolId: string]: ReturnType<typeof CpmmPoolInfoLayout.decode> } = {};
+    const accounts = await getMultipleAccountsInfoWithCustomFlags(
+      this.scope.connection,
+      poolIds.map((i) => ({ pubkey: new PublicKey(i) })),
+    );
+    const poolInfos: { [poolId: string]: ReturnType<typeof CpmmPoolInfoLayout.decode> & { programId: PublicKey } } = {};
 
     const needFetchConfigId = new Set<string>();
     const needFetchVaults: PublicKey[] = [];
 
     for (let i = 0; i < poolIds.length; i++) {
       const item = accounts[i];
-      if (item === null) throw Error("fetch pool info error: " + String(poolIds[i]));
-      const rpc = CpmmPoolInfoLayout.decode(item.data);
-      poolInfos[String(poolIds[i])] = rpc;
+      if (item.accountInfo === null) throw Error("fetch pool info error: " + String(poolIds[i]));
+      const rpc = CpmmPoolInfoLayout.decode(item.accountInfo.data);
+      poolInfos[String(poolIds[i])] = {
+        ...rpc,
+        programId: item.accountInfo.owner,
+      };
       needFetchConfigId.add(String(rpc.configId));
 
       needFetchVaults.push(rpc.vaultA, rpc.vaultB);
@@ -90,10 +85,13 @@ export default class CpmmModule extends ModuleBase {
 
     if (fetchConfigInfo) {
       const configIds = [...needFetchConfigId];
-      const configState = await this.scope.connection.getMultipleAccountsInfo(configIds.map((i) => new PublicKey(i)));
+      const configState = await getMultipleAccountsInfoWithCustomFlags(
+        this.scope.connection,
+        configIds.map((i) => ({ pubkey: new PublicKey(i) })),
+      );
 
       for (let i = 0; i < configIds.length; i++) {
-        const configItemInfo = configState[i];
+        const configItemInfo = configState[i].accountInfo;
         if (configItemInfo === null) throw Error("fetch pool config error: " + configIds[i]);
         configInfo[configIds[i]] = CpmmConfigInfoLayout.decode(configItemInfo.data);
       }
@@ -101,25 +99,19 @@ export default class CpmmModule extends ModuleBase {
 
     const vaultInfo: { [vaultId: string]: BN } = {};
 
-    const vaultAccountInfo = await this.scope.connection.getMultipleAccountsInfo(
-      needFetchVaults.map((i) => new PublicKey(i)),
+    const vaultAccountInfo = await getMultipleAccountsInfoWithCustomFlags(
+      this.scope.connection,
+      needFetchVaults.map((i) => ({ pubkey: new PublicKey(i) })),
     );
 
     for (let i = 0; i < needFetchVaults.length; i++) {
-      const vaultItemInfo = vaultAccountInfo[i];
+      const vaultItemInfo = vaultAccountInfo[i].accountInfo;
       if (vaultItemInfo === null) throw Error("fetch vault info error: " + needFetchVaults[i]);
 
       vaultInfo[String(needFetchVaults[i])] = new BN(AccountLayout.decode(vaultItemInfo.data).amount.toString());
     }
 
-    const returnData: {
-      [poolId: string]: ReturnType<typeof CpmmPoolInfoLayout.decode> & {
-        baseReserve: BN;
-        quoteReserve: BN;
-        configInfo?: CpmmConfigInfoInterface;
-        poolPrice: Decimal;
-      };
-    } = {};
+    const returnData: { [poolId: string]: CpmmRpcData } = {};
 
     for (const [id, info] of Object.entries(poolInfos)) {
       const baseReserve = vaultInfo[info.vaultA.toString()].sub(info.protocolFeesMintA).sub(info.fundFeesMintA);
@@ -128,6 +120,8 @@ export default class CpmmModule extends ModuleBase {
         ...info,
         baseReserve,
         quoteReserve,
+        vaultAAmount: vaultInfo[info.vaultA.toString()],
+        vaultBAmount: vaultInfo[info.vaultB.toString()],
         configInfo: configInfo[info.configId.toString()],
         poolPrice: new Decimal(quoteReserve.toString())
           .div(new Decimal(10).pow(info.mintDecimalB))
@@ -136,6 +130,148 @@ export default class CpmmModule extends ModuleBase {
     }
 
     return returnData;
+  }
+
+  public toComputePoolInfos({
+    pools,
+    mintInfos,
+  }: {
+    pools: Record<string, CpmmRpcData>;
+    mintInfos: ReturnTypeFetchMultipleMintInfos;
+  }): Record<string, CpmmComputeData> {
+    return Object.keys(pools).reduce((acc, cur) => {
+      const pool = pools[cur];
+      const [mintA, mintB] = [pool.mintA.toBase58(), pool.mintB.toBase58()];
+
+      return {
+        ...acc,
+        [cur]: {
+          ...pool,
+          id: new PublicKey(cur),
+          configInfo: pool.configInfo!,
+          version: 7 as const,
+          authority: getPdaPoolAuthority(pool.programId).publicKey,
+          mintA: toApiV3Token({
+            address: mintA,
+            decimals: pool.mintDecimalA,
+            programId: pool.mintProgramA.toBase58(),
+            extensions: {
+              feeConfig: mintInfos[mintA]?.feeConfig ? toFeeConfig(mintInfos[mintA]?.feeConfig) : undefined,
+            },
+          }),
+          mintB: toApiV3Token({
+            address: mintB,
+            decimals: pool.mintDecimalB,
+            programId: pool.mintProgramB.toBase58(),
+            extensions: {
+              feeConfig: mintInfos[mintB]?.feeConfig ? toFeeConfig(mintInfos[mintB]?.feeConfig) : undefined,
+            },
+          }),
+        },
+      };
+    }, {} as Record<string, CpmmComputeData>);
+  }
+
+  public async getPoolInfoFromRpc(poolId: string): Promise<{
+    poolInfo: ApiV3PoolInfoStandardItemCpmm;
+    poolKeys: CpmmKeys;
+    rpcData: CpmmRpcData;
+  }> {
+    const rpcData = await this.getRpcPoolInfo(poolId, true);
+    const mintInfos = await fetchMultipleMintInfos({
+      connection: this.scope.connection,
+      mints: [rpcData.mintA, rpcData.mintB],
+    });
+
+    const mintA = toApiV3Token({
+      address: rpcData.mintA.toBase58(),
+      decimals: rpcData.mintDecimalA,
+      programId: rpcData.mintProgramA.toBase58(),
+      extensions: {
+        feeConfig: mintInfos[rpcData.mintA.toBase58()].feeConfig
+          ? toFeeConfig(mintInfos[rpcData.mintA.toBase58()].feeConfig)
+          : undefined,
+      },
+    });
+    const mintB = toApiV3Token({
+      address: rpcData.mintB.toBase58(),
+      decimals: rpcData.mintDecimalB,
+      programId: rpcData.mintProgramB.toBase58(),
+      extensions: {
+        feeConfig: mintInfos[rpcData.mintB.toBase58()].feeConfig
+          ? toFeeConfig(mintInfos[rpcData.mintB.toBase58()].feeConfig)
+          : undefined,
+      },
+    });
+
+    const lpMint = toApiV3Token({
+      address: rpcData.mintLp.toBase58(),
+      decimals: rpcData.lpDecimals,
+      programId: TOKEN_PROGRAM_ID.toBase58(),
+    });
+
+    const configInfo = {
+      id: rpcData.configId.toBase58(),
+      index: rpcData.configInfo!.index,
+      protocolFeeRate: rpcData.configInfo!.protocolFeeRate.toNumber(),
+      tradeFeeRate: rpcData.configInfo!.tradeFeeRate.toNumber(),
+      fundFeeRate: rpcData.configInfo!.fundFeeRate.toNumber(),
+      createPoolFee: rpcData.configInfo!.createPoolFee.toString(),
+    };
+
+    const mockRewardData = {
+      volume: 0,
+      volumeQuote: 0,
+      volumeFee: 0,
+      apr: 0,
+      feeApr: 0,
+      priceMin: 0,
+      priceMax: 0,
+      rewardApr: [],
+    };
+
+    return {
+      poolInfo: {
+        programId: rpcData.programId.toBase58(),
+        id: poolId,
+        type: "Standard",
+        lpMint,
+        lpPrice: 0,
+        lpAmount: rpcData.lpAmount.toNumber(),
+        config: configInfo,
+        mintA,
+        mintB,
+        rewardDefaultInfos: [],
+        rewardDefaultPoolInfos: "Ecosystem",
+        price: rpcData.poolPrice.toNumber(),
+        mintAmountA: new Decimal(rpcData.vaultAAmount.toString()).div(10 ** mintA.decimals).toNumber(),
+        mintAmountB: new Decimal(rpcData.vaultBAmount.toString()).div(10 ** mintB.decimals).toNumber(),
+        feeRate: rpcData.configInfo!.tradeFeeRate.toNumber(),
+        openTime: rpcData.openTime.toString(),
+        tvl: 0,
+
+        day: mockRewardData,
+        week: mockRewardData,
+        month: mockRewardData,
+        pooltype: [],
+
+        farmUpcomingCount: 0,
+        farmOngoingCount: 0,
+        farmFinishedCount: 0,
+      },
+      poolKeys: {
+        programId: rpcData.programId.toBase58(),
+        id: poolId,
+        mintA,
+        mintB,
+        openTime: rpcData.openTime.toString(),
+        vault: { A: rpcData.vaultA.toBase58(), B: rpcData.vaultB.toBase58() },
+        authority: getPdaPoolAuthority(rpcData.programId).publicKey.toBase58(),
+        mintLp: lpMint,
+        config: configInfo,
+      },
+      rpcData,
+    };
   }
 
   public async createPool<T extends TxVersion>({
@@ -247,7 +383,17 @@ export default class CpmmModule extends ModuleBase {
   }
 
   public async addLiquidity<T extends TxVersion>(params: AddCpmmLiquidityParams<T>): Promise<MakeTxData<T>> {
-    const { poolInfo, inputAmount, baseIn, slippage, computeResult, computeBudgetConfig, config, txVersion } = params;
+    const {
+      poolInfo,
+      poolKeys: propPoolKeys,
+      inputAmount,
+      baseIn,
+      slippage,
+      computeResult,
+      computeBudgetConfig,
+      config,
+      txVersion,
+    } = params;
 
     if (this.scope.availability.addStandardPosition === false)
       this.logAndCreateError("add liquidity feature disabled in your region");
@@ -348,7 +494,7 @@ export default class CpmmModule extends ModuleBase {
       checkCreateATAOwner,
     });
     txBuilder.addInstruction(lpInstruction);
-    const poolKeys = await this.getCpmmPoolKeys(poolInfo.id);
+    const poolKeys = propPoolKeys ?? (await this.getCpmmPoolKeys(poolInfo.id));
     const _slippage = new Percent(new BN(1)).sub(slippage);
 
     txBuilder.addInstruction({
@@ -380,7 +526,7 @@ export default class CpmmModule extends ModuleBase {
   }
 
   public async withdrawLiquidity<T extends TxVersion>(params: WithdrawCpmmLiquidityParams<T>): Promise<MakeTxData<T>> {
-    const { poolInfo, lpAmount, slippage, computeBudgetConfig, txVersion } = params;
+    const { poolInfo, poolKeys: propPoolKeys, lpAmount, slippage, computeBudgetConfig, txVersion } = params;
 
     if (this.scope.availability.addStandardPosition === false)
       this.logAndCreateError("add liquidity feature disabled in your region");
@@ -395,8 +541,8 @@ export default class CpmmModule extends ModuleBase {
 
     const epochInfo = await this.scope.fetchEpochInfo();
     const [mintAAmountFee, mintBAmountFee] = [
-      getTransferAmountFeeV2(amountMintA, poolInfo.mintA.extensions.feeConfig, epochInfo, true),
-      getTransferAmountFeeV2(amountMintB, poolInfo.mintB.extensions.feeConfig, epochInfo, true),
+      getTransferAmountFeeV2(amountMintA, poolInfo.mintA.extensions.feeConfig, epochInfo, false),
+      getTransferAmountFeeV2(amountMintB, poolInfo.mintB.extensions.feeConfig, epochInfo, false),
     ];
 
     const { account } = this.scope;
@@ -451,7 +597,7 @@ export default class CpmmModule extends ModuleBase {
 
     if (!lpTokenAccount)
       this.logAndCreateError("cannot found lp token account", "tokenAccounts", account.tokenAccounts);
-    const poolKeys = await this.getCpmmPoolKeys(poolInfo.id);
+    const poolKeys = propPoolKeys ?? (await this.getCpmmPoolKeys(poolInfo.id));
     txBuilder.addInstruction({
       instructions: [
         makeWithdrawCpmmInInstruction(
@@ -481,11 +627,21 @@ export default class CpmmModule extends ModuleBase {
   }
 
   public async swap<T extends TxVersion>(params: CpmmSwapParams): Promise<MakeTxData<T>> {
-    const { poolInfo, baseIn, swapResult, slippage = 0, config, computeBudgetConfig, txVersion } = params;
+    const {
+      poolInfo,
+      poolKeys: propPoolKeys,
+      baseIn,
+      inputAmount,
+      swapResult,
+      slippage = 0,
+      config,
+      computeBudgetConfig,
+      txVersion,
+    } = params;
 
-    const { bypassAssociatedCheck, checkCreateATAOwner } = {
+    const { bypassAssociatedCheck, checkCreateATAOwner, associatedOnly } = {
       // default
-      ...{ bypassAssociatedCheck: false, checkCreateATAOwner: false },
+      ...{ bypassAssociatedCheck: false, checkCreateATAOwner: false, associatedOnly: true },
       // custom
       ...config,
     };
@@ -493,96 +649,128 @@ export default class CpmmModule extends ModuleBase {
     const txBuilder = this.createTxBuilder();
 
     const [mintA, mintB] = [new PublicKey(poolInfo.mintA.address), new PublicKey(poolInfo.mintB.address)];
-
-    const mintATokenAcc = await this.scope.account.getCreatedTokenAccount({
-      programId: new PublicKey(poolInfo.mintA.programId ?? TOKEN_PROGRAM_ID),
-      mint: mintA,
-      associatedOnly: false,
-    });
-
-    const mintBTokenAcc = await this.scope.account.getCreatedTokenAccount({
-      programId: new PublicKey(poolInfo.mintB.programId ?? TOKEN_PROGRAM_ID),
-      mint: mintB,
-      associatedOnly: false,
-    });
-
     swapResult.destinationAmountSwapped = swapResult.destinationAmountSwapped
       .mul(new BN((1 - slippage) * 10000))
       .div(new BN(10000));
 
-    const { tokenAccount: _mintATokenAcc, ...mintATokenAccInstruction } = await this.scope.account.handleTokenAccount({
-      side: baseIn ? "in" : "out",
-      amount: baseIn ? swapResult.sourceAmountSwapped : swapResult.destinationAmountSwapped,
-      programId: new PublicKey(poolInfo.mintA.programId),
-      mint: mintA,
-      tokenAccount: mintATokenAcc,
-      bypassAssociatedCheck,
-      checkCreateATAOwner,
-    });
-    txBuilder.addInstruction(mintATokenAccInstruction);
+    const mintAUseSOLBalance = poolInfo.mintA.address === WSOLMint.toBase58();
+    const mintBUseSOLBalance = poolInfo.mintB.address === WSOLMint.toBase58();
+    const { account: mintATokenAcc, instructionParams: mintATokenAccInstruction } =
+      await this.scope.account.getOrCreateTokenAccount({
+        mint: mintA,
+        tokenProgram: new PublicKey(poolInfo.mintA.programId ?? TOKEN_PROGRAM_ID),
+        owner: this.scope.ownerPubKey,
+        createInfo:
+          mintAUseSOLBalance || !baseIn
+            ? {
+                payer: this.scope.ownerPubKey,
+                amount: baseIn ? swapResult.sourceAmountSwapped : 0,
+              }
+            : undefined,
+        notUseTokenAccount: mintAUseSOLBalance,
+        skipCloseAccount: !mintAUseSOLBalance,
+        associatedOnly: mintAUseSOLBalance ? false : associatedOnly,
+        checkCreateATAOwner,
+      });
+    mintATokenAccInstruction && txBuilder.addInstruction(mintATokenAccInstruction);
 
-    const { tokenAccount: _mintBTokenAcc, ...mintBTokenAccInstruction } = await this.scope.account.handleTokenAccount({
-      side: baseIn ? "out" : "in",
-      amount: baseIn ? swapResult.destinationAmountSwapped : swapResult.sourceAmountSwapped,
-      programId: new PublicKey(poolInfo.mintB.programId),
-      mint: mintB,
-      tokenAccount: mintBTokenAcc,
-      bypassAssociatedCheck,
-      checkCreateATAOwner,
-    });
-    txBuilder.addInstruction(mintBTokenAccInstruction);
+    const { account: mintBTokenAcc, instructionParams: mintBTokenAccInstruction } =
+      await this.scope.account.getOrCreateTokenAccount({
+        mint: mintB,
+        tokenProgram: new PublicKey(poolInfo.mintB.programId ?? TOKEN_PROGRAM_ID),
+        owner: this.scope.ownerPubKey,
+        createInfo:
+          mintBUseSOLBalance || baseIn
+            ? {
+                payer: this.scope.ownerPubKey,
+                amount: baseIn ? 0 : swapResult.sourceAmountSwapped,
+              }
+            : undefined,
+        notUseTokenAccount: mintBUseSOLBalance,
+        skipCloseAccount: !mintBUseSOLBalance,
+        associatedOnly: mintBUseSOLBalance ? false : associatedOnly,
+        checkCreateATAOwner,
+      });
+    mintBTokenAccInstruction && txBuilder.addInstruction(mintBTokenAccInstruction);
 
-    if (!_mintATokenAcc && !_mintBTokenAcc)
-      this.logAndCreateError("cannot found target token accounts", "tokenAccounts", this.scope.account.tokenAccounts);
+    if (!mintATokenAcc || !mintBTokenAcc)
+      this.logAndCreateError("user do not have token account", {
+        mintA: poolInfo.mintA.symbol || poolInfo.mintA.address,
+        mintB: poolInfo.mintB.symbol || poolInfo.mintB.address,
+        mintATokenAcc,
+        mintBTokenAcc,
+        mintAUseSOLBalance,
+        mintBUseSOLBalance,
+        associatedOnly,
+      });
 
-    const poolKeys = await this.getCpmmPoolKeys(poolInfo.id);
+    const poolKeys = propPoolKeys ?? (await this.getCpmmPoolKeys(poolInfo.id));
 
     txBuilder.addInstruction({
       instructions: [
-        baseIn
-          ? makeSwapCpmmBaseInInInstruction(
-              new PublicKey(poolInfo.programId),
-              this.scope.ownerPubKey,
-              new PublicKey(poolKeys.authority),
-              new PublicKey(poolKeys.config.id),
-              new PublicKey(poolInfo.id),
-              _mintATokenAcc!,
-              _mintBTokenAcc!,
-              new PublicKey(poolKeys.vault.A),
-              new PublicKey(poolKeys.vault.B),
-              new PublicKey(poolInfo.mintA.programId ?? TOKEN_PROGRAM_ID),
-              new PublicKey(poolInfo.mintB.programId ?? TOKEN_PROGRAM_ID),
-              mintA,
-              mintB,
-              getPdaObservationId(new PublicKey(poolInfo.programId), new PublicKey(poolInfo.id)).publicKey,
+        makeSwapCpmmBaseInInInstruction(
+          new PublicKey(poolInfo.programId),
+          this.scope.ownerPubKey,
+          new PublicKey(poolKeys.authority),
+          new PublicKey(poolKeys.config.id),
+          new PublicKey(poolInfo.id),
+          baseIn ? mintATokenAcc! : mintBTokenAcc!,
+          baseIn ? mintBTokenAcc! : mintATokenAcc!,
+          new PublicKey(poolKeys.vault[baseIn ? "A" : "B"]),
+          new PublicKey(poolKeys.vault[baseIn ? "B" : "A"]),
+          new PublicKey(poolInfo[baseIn ? "mintA" : "mintB"].programId ?? TOKEN_PROGRAM_ID),
+          new PublicKey(poolInfo[baseIn ? "mintB" : "mintA"].programId ?? TOKEN_PROGRAM_ID),
+          baseIn ? mintA : mintB,
+          baseIn ? mintB : mintA,
+          getPdaObservationId(new PublicKey(poolInfo.programId), new PublicKey(poolInfo.id)).publicKey,
 
-              swapResult.sourceAmountSwapped,
-              swapResult.destinationAmountSwapped,
-            )
-          : makeSwapCpmmBaseOutInInstruction(
-              new PublicKey(poolInfo.programId),
-              this.scope.ownerPubKey,
-              new PublicKey(poolKeys.authority),
-              new PublicKey(poolKeys.config.id),
-              new PublicKey(poolInfo.id),
+          inputAmount,
+          swapResult.destinationAmountSwapped,
+        ),
+        // baseIn
+        //   ? makeSwapCpmmBaseInInInstruction(
+        //       new PublicKey(poolInfo.programId),
+        //       this.scope.ownerPubKey,
+        //       new PublicKey(poolKeys.authority),
+        //       new PublicKey(poolKeys.config.id),
+        //       new PublicKey(poolInfo.id),
+        //       mintATokenAcc!,
+        //       mintBTokenAcc!,
+        //       new PublicKey(poolKeys.vault.A),
+        //       new PublicKey(poolKeys.vault.B),
+        //       new PublicKey(poolInfo.mintA.programId ?? TOKEN_PROGRAM_ID),
+        //       new PublicKey(poolInfo.mintB.programId ?? TOKEN_PROGRAM_ID),
+        //       mintA,
+        //       mintB,
+        //       getPdaObservationId(new PublicKey(poolInfo.programId), new PublicKey(poolInfo.id)).publicKey,
 
-              _mintBTokenAcc!,
-              _mintATokenAcc!,
+        //       swapResult.sourceAmountSwapped,
+        //       swapResult.destinationAmountSwapped,
+        //     )
+        //   : makeSwapCpmmBaseOutInInstruction(
+        //       new PublicKey(poolInfo.programId),
+        //       this.scope.ownerPubKey,
+        //       new PublicKey(poolKeys.authority),
+        //       new PublicKey(poolKeys.config.id),
+        //       new PublicKey(poolInfo.id),
 
-              new PublicKey(poolKeys.vault.B),
-              new PublicKey(poolKeys.vault.A),
+        //       mintBTokenAcc!,
+        //       mintATokenAcc!,
 
-              new PublicKey(poolInfo.mintB.programId ?? TOKEN_PROGRAM_ID),
-              new PublicKey(poolInfo.mintA.programId ?? TOKEN_PROGRAM_ID),
+        //       new PublicKey(poolKeys.vault.B),
+        //       new PublicKey(poolKeys.vault.A),
 
-              mintB,
-              mintA,
+        //       new PublicKey(poolInfo.mintB.programId ?? TOKEN_PROGRAM_ID),
+        //       new PublicKey(poolInfo.mintA.programId ?? TOKEN_PROGRAM_ID),
 
-              getPdaObservationId(new PublicKey(poolInfo.programId), new PublicKey(poolInfo.id)).publicKey,
+        //       mintB,
+        //       mintA,
 
-              swapResult.sourceAmountSwapped,
-              swapResult.destinationAmountSwapped,
-            ),
+        //       getPdaObservationId(new PublicKey(poolInfo.programId), new PublicKey(poolInfo.id)).publicKey,
+
+        //       swapResult.sourceAmountSwapped,
+        //       swapResult.destinationAmountSwapped,
+        //     ),
       ],
       instructionTypes: [baseIn ? InstructionType.CpmmSwapBaseIn : InstructionType.CpmmSwapBaseOut],
     });
@@ -590,6 +778,51 @@ export default class CpmmModule extends ModuleBase {
     txBuilder.addCustomComputeBudget(computeBudgetConfig);
 
     return txBuilder.versionBuild({ txVersion }) as Promise<MakeTxData<T>>;
+  }
+
+  public computeSwapAmount({
+    pool,
+    amountIn,
+    outputMint,
+    slippage,
+  }: {
+    pool: CpmmComputeData;
+    amountIn: BN;
+    outputMint: string | PublicKey;
+    slippage: number;
+  }): {
+    allTrade: boolean;
+    amountIn: BN;
+    amountOut: BN;
+    minAmountOut: BN;
+    fee: BN;
+    executionPrice: Decimal;
+    priceImpact: any;
+  } {
+    const isBaseIn = outputMint.toString() === pool.mintB.address;
+
+    const swapResult = CurveCalculator.swap(
+      amountIn,
+      isBaseIn ? pool.baseReserve : pool.quoteReserve,
+      isBaseIn ? pool.quoteReserve : pool.baseReserve,
+      pool.configInfo.tradeFeeRate,
+    );
+
+    const executionPrice = new Decimal(swapResult.destinationAmountSwapped.toString()).div(
+      swapResult.sourceAmountSwapped.toString(),
+    );
+
+    const minAmountOut = swapResult.destinationAmountSwapped.mul(new BN((1 - slippage) * 10000)).div(new BN(10000));
+
+    return {
+      allTrade: swapResult.sourceAmountSwapped.eq(amountIn),
+      amountIn,
+      amountOut: swapResult.destinationAmountSwapped,
+      minAmountOut,
+      executionPrice,
+      fee: swapResult.tradeFee,
+      priceImpact: pool.poolPrice.sub(executionPrice).div(pool.poolPrice),
+    };
   }
 
   public computePairAmount({

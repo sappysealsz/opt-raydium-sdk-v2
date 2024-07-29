@@ -168,9 +168,9 @@ export class Api {
     return res.data;
   }
 
-  async getJupTokenList(type?: JupTokenType): Promise<ApiV3Token[]> {
-    return this.api.get("/", {
-      baseURL: (this.urlConfigs.JUP_TOKEN_LIST || API_URLS.JUP_TOKEN_LIST).replace("{type}", type || JupTokenType.ALL),
+  async getJupTokenList(): Promise<ApiV3Token[]> {
+    return this.api.get("", {
+      baseURL: this.urlConfigs.JUP_TOKEN_LIST || API_URLS.JUP_TOKEN_LIST,
     });
   }
 
@@ -228,7 +228,7 @@ export class Api {
       mint1: string | PublicKey;
       mint2?: string | PublicKey;
     } & Omit<FetchPoolParams, "pageSize">,
-  ): Promise<ApiV3PoolInfoItem[]> {
+  ): Promise<PoolsApiReturn> {
     const {
       mint1: propMint1,
       mint2: propMint2,
@@ -273,6 +273,37 @@ export class Api {
     const res = await this.api.get<AvailabilityCheckAPI3>(
       this.urlConfigs.CHECK_AVAILABILITY || API_URLS.CHECK_AVAILABILITY,
     );
+    return res.data;
+  }
+
+  async sendTxToJito(
+    txBase58: string[],
+    bundleMode?: boolean,
+  ): Promise<{
+    jsonrpc: string;
+    result: string;
+    id: number;
+  }> {
+    const url = bundleMode
+      ? this.urlConfigs.JITO_BUNDLE || API_URLS.JITO_BUNDLE
+      : this.urlConfigs.JITO_TRANSACTION || API_URLS.JITO_TRANSACTION;
+    const res = await this.api.post<{
+      jsonrpc: string;
+      result: string;
+      id: number;
+    }>(
+      url,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: bundleMode ? "sendBundle" : "sendTransaction",
+        params: txBase58,
+      },
+      {
+        baseURL: this.urlConfigs.JITO || API_URLS.JITO,
+      },
+    );
+
     return res.data;
   }
 }

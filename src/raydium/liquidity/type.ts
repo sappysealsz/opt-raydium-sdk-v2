@@ -1,16 +1,19 @@
 import { PublicKey } from "@solana/web3.js";
-import { ApiV3PoolInfoStandardItem, AmmV4Keys, AmmV5Keys } from "@/api/type";
+import { ApiV3PoolInfoStandardItem, AmmV4Keys, AmmV5Keys, PoolKeys } from "@/api/type";
 import { TxVersion } from "@/common/txTool/txType";
 import { BigNumberish } from "@/common/bignumber";
 import BN from "bn.js";
 import { ComputeBudgetConfig } from "@/raydium/type";
 import { TokenAmount } from "@/module/amount";
+import { liquidityStateV4Layout } from "./layout";
+import Decimal from "decimal.js";
 
 export type LiquiditySide = "a" | "b";
 export type AmountSide = "base" | "quote";
 
 export interface AddLiquidityParams<T = TxVersion.LEGACY> {
   poolInfo: ApiV3PoolInfoStandardItem;
+  poolKeys?: AmmV4Keys | AmmV5Keys;
   payer?: PublicKey;
   amountInA: TokenAmount;
   amountInB: TokenAmount;
@@ -25,6 +28,7 @@ export interface AddLiquidityParams<T = TxVersion.LEGACY> {
 
 export interface RemoveParams<T = TxVersion.LEGACY> {
   poolInfo: ApiV3PoolInfoStandardItem;
+  poolKeys?: AmmV4Keys | AmmV5Keys;
   payer?: PublicKey;
   amountIn: BN;
   config?: {
@@ -189,6 +193,8 @@ export interface ComputeAmountOutParam {
   poolInfo: ApiV3PoolInfoStandardItem & {
     baseReserve: BN;
     quoteReserve: BN;
+    version: 4 | 5;
+    status: number;
   };
   mintIn: string | PublicKey;
   mintOut: string | PublicKey;
@@ -198,11 +204,25 @@ export interface ComputeAmountOutParam {
 
 export interface SwapParam<T = TxVersion.LEGACY> {
   poolInfo: ApiV3PoolInfoStandardItem;
-  associatedOnly: boolean;
+  poolKeys?: AmmV4Keys | AmmV5Keys;
   amountIn: BN;
   amountOut: BN;
   inputMint: string;
   fixedSide: SwapSide;
+  config?: {
+    associatedOnly?: boolean;
+    inputUseSolBalance?: boolean;
+    outputUseSolBalance?: boolean;
+  };
   computeBudgetConfig?: ComputeBudgetConfig;
   txVersion?: T;
 }
+
+export type AmmRpcData = ReturnType<typeof liquidityStateV4Layout.decode> & {
+  baseReserve: BN;
+  quoteReserve: BN;
+  mintAAmount: BN;
+  mintBAmount: BN;
+  poolPrice: Decimal;
+  programId: PublicKey;
+};

@@ -62,10 +62,7 @@ interface ApiData {
 
   // v3 data
   tokenList?: DataBase<ApiV3TokenRes>;
-  jupTokenList?: {
-    [JupTokenType.ALL]?: DataBase<ApiV3Token[]>;
-    [JupTokenType.Strict]?: DataBase<ApiV3Token[]>;
-  };
+  jupTokenList?: DataBase<ApiV3Token[]>;
 }
 
 export class Raydium {
@@ -191,6 +188,7 @@ export class Raydium {
   }
   public setOwner(owner?: PublicKey | Keypair): Raydium {
     this._owner = owner ? new Owner(owner) : undefined;
+    this.account.resetTokenAccounts();
     return this;
   }
   get connection(): Connection {
@@ -238,29 +236,40 @@ export class Raydium {
   public async fetchV3TokenList(forceUpdate?: boolean): Promise<ApiV3TokenRes> {
     if (this.apiData.tokenList && !this.isCacheInvalidate(this.apiData.tokenList.fetched) && !forceUpdate)
       return this.apiData.tokenList.data;
-    const raydiumList = await this.api.getTokenList();
-    const dataObject = {
-      fetched: Date.now(),
-      data: raydiumList,
-    };
-    this.apiData.tokenList = dataObject;
+    try {
+      const raydiumList = await this.api.getTokenList();
+      const dataObject = {
+        fetched: Date.now(),
+        data: raydiumList,
+      };
+      this.apiData.tokenList = dataObject;
 
-    return dataObject.data;
+      return dataObject.data;
+    } catch (e) {
+      console.error(e);
+      return {
+        mintList: [],
+        blacklist: [],
+        whiteList: [],
+      };
+    }
   }
 
-  public async fetchJupTokenList(type: JupTokenType, forceUpdate?: boolean): Promise<ApiV3Token[]> {
-    const prevFetched = this.apiData.jupTokenList?.[type];
+  public async fetchJupTokenList(forceUpdate?: boolean): Promise<ApiV3Token[]> {
+    const prevFetched = this.apiData.jupTokenList;
     if (prevFetched && !this.isCacheInvalidate(prevFetched.fetched) && !forceUpdate) return prevFetched.data;
-    const jupList = await this.api.getJupTokenList(type);
-    this.apiData.jupTokenList = {
-      ...this.apiData.jupTokenList,
-      [type]: {
+    try {
+      const jupList = await this.api.getJupTokenList();
+      this.apiData.jupTokenList = {
         fetched: Date.now(),
         data: jupList,
-      },
-    };
+      };
 
-    return this.apiData.jupTokenList[type]!.data;
+      return this.apiData.jupTokenList.data;
+    } catch (e) {
+      console.error(e);
+      return [];
+    }
   }
 
   get chainTimeData(): { offset: number; chainTime: number } | undefined {

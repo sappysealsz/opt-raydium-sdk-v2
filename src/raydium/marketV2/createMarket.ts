@@ -3,12 +3,11 @@ import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import BN from "bn.js";
 import ModuleBase from "../moduleBase";
 import { TxVersion } from "@/common/txTool/txType";
-import { MakeMultiTxData, TxBuildData, TxV0BuildData } from "@/common/txTool/txTool";
+import { MakeMultiTxData } from "@/common/txTool/txTool";
 import { generatePubKey } from "../account/util";
 import { BN_ZERO } from "@/common/bignumber";
 import { makeCreateMarketInstruction } from "./instrument";
-import { ComputeBudgetConfig, MakeMultiTransaction } from "@/raydium/type";
-// import { registerLookupCache } from "@/common/utility";
+import { ComputeBudgetConfig } from "@/raydium/type";
 
 interface ExtInfo {
   address: {
@@ -31,6 +30,9 @@ export default class MarketV2 extends ModuleBase {
     lotSize, // 1
     tickSize, // 0.01
     dexProgramId,
+    requestQueueSpace,
+    eventQueueSpace,
+    orderbookQueueSpace,
     txVersion,
     computeBudgetConfig,
   }: {
@@ -47,6 +49,9 @@ export default class MarketV2 extends ModuleBase {
     dexProgramId: PublicKey;
     eventQueue?: PublicKey;
     requestQueue?: PublicKey;
+    requestQueueSpace?: number;
+    eventQueueSpace?: number;
+    orderbookQueueSpace?: number;
     txVersion?: T;
     computeBudgetConfig?: ComputeBudgetConfig;
   }): Promise<MakeMultiTxData<T, ExtInfo>> {
@@ -79,6 +84,7 @@ export default class MarketV2 extends ModuleBase {
     const { vaultOwner, vaultSignerNonce } = getVaultOwnerAndNonce();
     const baseLotSize = new BN(Math.round(10 ** baseInfo.decimals * lotSize));
     const quoteLotSize = new BN(Math.round(lotSize * 10 ** quoteInfo.decimals * tickSize));
+
     if (baseLotSize.eq(BN_ZERO)) throw Error("lot size is too small");
     if (quoteLotSize.eq(BN_ZERO)) throw Error("tick size or lot size is too small");
     const allTxArr = await makeCreateMarketInstruction({
@@ -102,6 +108,10 @@ export default class MarketV2 extends ModuleBase {
         vaultSignerNonce,
         baseLotSize,
         quoteLotSize,
+
+        requestQueueSpace,
+        eventQueueSpace,
+        orderbookQueueSpace,
       },
     });
     const txBuilder = this.createTxBuilder();
@@ -112,7 +122,7 @@ export default class MarketV2 extends ModuleBase {
     });
 
     // const extraTxBuildData: any[] = [];
-    
+
     for await (const txData of allTxArr.slice(1, allTxArr.length)) {
       // const extraTxBuilder = this.createTxBuilder();
       // extraTxBuilder.addCustomComputeBudget(computeBudgetConfig);
@@ -125,9 +135,7 @@ export default class MarketV2 extends ModuleBase {
       // const build = await extraTxBuilder.versionBuild({ txVersion });
       // extraTxBuildData.push(build);
     }
-    
-    // await registerLookupCache(this.scope.owner);
-    
+
     if (txVersion === TxVersion.V0)
       return txBuilder.sizeCheckBuildV0({
         computeBudgetConfig,

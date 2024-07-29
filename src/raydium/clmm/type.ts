@@ -9,7 +9,7 @@ import { TxVersion } from "@/common/txTool/txType";
 import { GetTransferAmountFee, TransferAmountFee } from "../type";
 import { ComputeBudgetConfig } from "@/raydium/type";
 
-import { ClmmPositionLayout } from "./layout";
+import { ClmmPositionLayout, PoolInfoLayout } from "./layout";
 
 export { ApiClmmConfigInfo };
 
@@ -145,6 +145,7 @@ export interface ClmmPoolInfo {
 
 export interface ComputeClmmPoolInfo {
   id: PublicKey;
+  version: 6;
   mintA: ApiV3Token;
   mintB: ApiV3Token;
 
@@ -251,6 +252,7 @@ export interface ReturnTypeGetAmountsFromLiquidity {
   amountSlippageB: BN;
 }
 export interface ReturnTypeComputeAmountOutFormat {
+  allTrade: boolean;
   realAmountIn: TransferAmountFee;
   amountOut: TransferAmountFee;
   minAmountOut: TransferAmountFee;
@@ -260,8 +262,10 @@ export interface ReturnTypeComputeAmountOutFormat {
   priceImpact: Percent;
   fee: TokenAmount;
   remainingAccounts: PublicKey[];
+  executionPriceX64: BN;
 }
 export interface ReturnTypeComputeAmountOut {
+  allTrade: boolean;
   realAmountIn: GetTransferAmountFee;
   amountOut: GetTransferAmountFee;
   minAmountOut: GetTransferAmountFee;
@@ -271,6 +275,7 @@ export interface ReturnTypeComputeAmountOut {
   priceImpact: Percent;
   fee: BN;
   remainingAccounts: PublicKey[];
+  executionPriceX64: BN;
 }
 
 export interface ReturnTypeFetchMultiplePoolTickArrays {
@@ -324,6 +329,7 @@ export interface UserPositionAccount {
 
 export interface IncreasePositionFromLiquidity<T = TxVersion.LEGACY> {
   poolInfo: ApiV3PoolInfoConcentratedItem;
+  poolKeys?: ClmmKeys;
   ownerPosition: ClmmPositionLayout;
   ownerInfo: {
     useSOLBalance?: boolean;
@@ -356,6 +362,7 @@ export interface IncreasePositionFromBase<T = TxVersion.LEGACY> {
 
 export interface DecreaseLiquidity<T = TxVersion.LEGACY> {
   poolInfo: ApiV3PoolInfoConcentratedItem;
+  poolKeys?: ClmmKeys;
   ownerPosition: ClmmPositionLayout;
   ownerInfo: {
     useSOLBalance?: boolean; // if has WSOL mint
@@ -458,6 +465,7 @@ export interface GetAmountParams {
 
 export interface InitRewardParams<T = TxVersion.LEGACY> {
   poolInfo: ApiV3PoolInfoConcentratedItem;
+  poolKeys?: ClmmKeys;
   ownerInfo: {
     feePayer?: PublicKey;
     useSOLBalance?: boolean; // if has WSOL mint
@@ -485,6 +493,7 @@ export interface InitRewardsParams<T = TxVersion.LEGACY> extends Omit<InitReward
 
 export interface SetRewardParams<T = TxVersion.LEGACY> {
   poolInfo: ApiV3PoolInfoConcentratedItem;
+  poolKeys?: ClmmKeys;
   ownerInfo: {
     feePayer?: PublicKey;
     useSOLBalance?: boolean; // if has WSOL mint
@@ -574,3 +583,5 @@ export interface InitRewardExtInfo {
     operationId: PublicKey;
   };
 }
+
+export type ClmmRpcData = ReturnType<typeof PoolInfoLayout.decode> & { currentPrice: number; programId: PublicKey };
